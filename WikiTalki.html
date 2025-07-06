@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Walkie Talkie with Trimming</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for the Inter font and overall look */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5; /* Light gray background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden; /* Prevent scroll */
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 1.5rem; /* More rounded corners */
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            padding: 2.5rem; /* Increased padding */
+            text-align: center;
+            max-width: 90%;
+            width: 600px; /* Wider for waveform */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .ptt-button {
+            background-image: linear-gradient(to right, #6a11cb 0%, #2575fc 100%); /* Gradient background */
+            color: white;
+            padding: 2rem 4rem; /* Larger button */
+            border-radius: 9999px; /* Fully rounded button */
+            font-size: 1.5rem; /* Larger font size */
+            font-weight: bold;
+            border: none;
+            cursor: pointer;
+            outline: none;
+            transition: transform 0.1s ease-in-out, box-shadow 0.1s ease-in-out;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            -webkit-tap-highlight-color: transparent; /* Remove tap highlight on mobile */
+            user-select: none; /* Prevent text selection */
+            margin-bottom: 1.5rem; /* Space below button */
+        }
+        .ptt-button:active {
+            transform: scale(0.95); /* Shrink on press */
+            box-shadow: 0 5px 10px -2px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .status-message {
+            margin-top: 1.5rem;
+            font-size: 1.1rem;
+            color: #4a5568; /* Darker gray for status */
+            min-height: 24px; /* Reserve space for message */
+        }
+        .error-message {
+            color: #e53e3e; /* Red for errors */
+            font-weight: bold;
+            margin-top: 1rem;
+        }
+        .message-box {
+            background-color: #fff;
+            border-radius: 0.75rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            padding: 1.5rem;
+            text-align: center;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1000;
+            display: none; /* Hidden by default */
+            max-width: 300px;
+        }
+        .message-box button {
+            background-color: #4299e1; /* Blue button */
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            border: none;
+            cursor: pointer;
+            margin-top: 1rem;
+            transition: background-color 0.2s;
+        }
+        .message-box button:hover {
+            background-color: #3182ce;
+        }
+        .audio-controls {
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid #e2e8f0;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .playback-buttons {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        .playback-buttons button {
+            background-color: #60a5fa; /* Blue-ish */
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            font-weight: bold;
+        }
+        .playback-buttons button:hover {
+            background-color: #3b82f6;
+        }
+        .playback-buttons button:disabled {
+            background-color: #a0a0a0;
+            cursor: not-allowed;
+        }
+        #waveformCanvas {
+            border: 1px solid #cbd5e0;
+            background-color: #f0f4f8;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            cursor: ew-resize; /* East-west resize cursor for selection */
+        }
+        .trim-button {
+            background-color: #4CAF50; /* Green background */
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            font-weight: bold;
+        }
+        .trim-button:hover {
+            background-color: #45a049;
+        }
+        .trim-button:disabled {
+            background-color: #a0a0a0;
+            cursor: not-allowed;
+        }
+        .info-text {
+            font-size: 0.85rem;
+            color: #6b7280;
+            margin-top: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-3xl font-extrabold text-gray-800 mb-6">Walkie Talkie</h1>
+        <p class="text-gray-600 mb-8">Hold the button to record, release to play!</p>
+
+        <button id="pttButton" class="ptt-button">
+            Push to Talk
+        </button>
+
+        <div id="statusMessage" class="status-message"></div>
+        <div id="errorMessage" class="error-message"></div>
+
+        <div class="audio-controls">
+            <h2 class="text-xl font-semibold text-gray-700 mb-3">Playback & Trim</h2>
+            <div class="playback-buttons">
+                <button id="playButton" disabled>Play</button>
+                <button id="pauseButton" disabled>Pause</button>
+                <button id="stopButton" disabled>Stop</button>
+            </div>
+            <canvas id="waveformCanvas" width="550" height="100"></canvas>
+            <button id="trimDownloadButton" class="trim-button" disabled>
+                Trim Selected & Download (.wav)
+            </button>
+            <p class="info-text">Click and drag on the waveform to select a part to delete. Press Enter to trim.</p>
+        </div>
+    </div>
+
+    <!-- Custom message box for alerts -->
+    <div id="customMessageBox" class="message-box">
+        <p id="messageBoxContent" class="text-gray-700"></p>
+        <button id="messageBoxCloseButton">OK</button>
+    </div>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        let audioPlayer = new Audio(); // Still used for initial playback
+        let lastAudioBlob = null; // Stores the raw recorded blob
+        let audioBuffer = null; // Stores the decoded AudioBuffer for waveform and trimming
+
+        // Web Audio API context for advanced processing
+        let audioContext;
+        let sourceNode = null; // Current AudioBufferSourceNode for playback
+        let playbackStartTime = 0; // Time when playback started
+        let playbackOffset = 0; // Current offset in the audio buffer
+
+        // Waveform canvas elements
+        const waveformCanvas = document.getElementById('waveformCanvas');
+        const canvasCtx = waveformCanvas.getContext('2d');
+
+        // Selection variables
+        let isSelecting = false;
+        let selectionStartX = 0;
+        let selectionEndX = 0; // In canvas pixels
+        let selectionStartSeconds = 0;
+        let selectionEndSeconds = 0; // In audio seconds
+
+        // DOM elements
+        const pttButton = document.getElementById('pttButton');
+        const playButton = document.getElementById('playButton');
+        const pauseButton = document.getElementById('pauseButton');
+        const stopButton = document.getElementById('stopButton');
+        const trimDownloadButton = document.getElementById('trimDownloadButton');
+        const statusMessage = document.getElementById('statusMessage');
+        const errorMessage = document.getElementById('errorMessage');
+
+        // --- Utility Functions ---
+
+        // Function to show a custom message box instead of alert()
+        function showMessageBox(message) {
+            const messageBox = document.getElementById('customMessageBox');
+            const messageBoxContent = document.getElementById('messageBoxContent');
+            messageBoxContent.textContent = message;
+            messageBox.style.display = 'block';
+        }
+
+        // Close button for the custom message box
+        document.getElementById('messageBoxCloseButton').addEventListener('click', () => {
+            document.getElementById('customMessageBox').style.display = 'none';
+        });
+
+        // Function to update status messages
+        function updateStatus(message, isError = false) {
+            if (isError) {
+                errorMessage.textContent = message;
+                statusMessage.textContent = ''; // Clear regular status
+            } else {
+                statusMessage.textContent = message;
+                errorMessage.textContent = ''; // Clear error status
+            }
+        }
+
+        // Function to enable/disable playback and trim buttons
+        function setPlaybackButtonsState(enable) {
+            playButton.disabled = !enable;
+            pauseButton.disabled = !enable;
+            stopButton.disabled = !enable;
+            trimDownloadButton.disabled = !enable;
+        }
+
+        // --- Microphone Access ---
+
+        async function getMicrophoneAccess() {
+            try {
+                updateStatus('Requesting microphone access...');
+                stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                updateStatus('Microphone access granted. Ready to record.');
+                return true;
+            } catch (err) {
+                console.error('Error accessing microphone:', err);
+                // IMPORTANT: If embedding this app in an iframe on another website,
+                // ensure the iframe has the 'allow="microphone"' attribute.
+                // Example: <iframe src="your-app-url.html" allow="microphone"></iframe>
+                // Also, ensure your website is served over HTTPS.
+                if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                    updateStatus('Microphone access denied. Please allow microphone access in your browser settings to use the Walkie Talkie.', true);
+                    showMessageBox('Microphone access denied. Please allow microphone access in your browser settings to use the Walkie Talkie.');
+                } else if (err.name === 'NotFoundError') {
+                    updateStatus('No microphone found. Please ensure a microphone is connected and enabled.', true);
+                    showMessageBox('No microphone found. Please ensure a microphone is connected and enabled.');
+                } else {
+                    updateStatus(`Error: ${err.message}. Could not access microphone.`, true);
+                    showMessageBox(`Error: ${err.message}. Could not access microphone.`);
+                }
+                pttButton.disabled = true; // Disable PTT button if no access
+                setPlaybackButtonsState(false); // Disable all playback/trim buttons
+                return false;
+            }
+        }
+
+        // --- Audio Recording ---
+
+        function startRecording() {
+            if (!stream) {
+                updateStatus('Microphone not ready. Please grant access first.', true);
+                return;
+            }
+
+            setPlaybackButtonsState(false); // Disable playback/trim buttons during recording
+            lastAudioBlob = null; // Clear previous audio blob
+            audioBuffer = null; // Clear previous audio buffer
+            clearWaveform(); // Clear the canvas
+            stopPlayback(); // Stop any ongoing playback
+
+            audioChunks = [];
+            mediaRecorder = new MediaRecorder(stream);
+
+            mediaRecorder.ondataavailable = event => {
+                audioChunks.push(event.data);
+            };
+
+            mediaRecorder.onstop = async () => {
+                lastAudioBlob = new Blob(audioChunks, { type: 'audio/webm' }); // Store the new blob
+
+                if (lastAudioBlob.size === 0) {
+                    updateStatus('No audio recorded. Hold the button longer.', true);
+                    setPlaybackButtonsState(false);
+                    return;
+                }
+
+                updateStatus('Processing recording...');
+
+                try {
+                    // Create AudioContext if it doesn't exist
+                    if (!audioContext) {
+                        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    }
+
+                    // Decode the recorded audio blob into an AudioBuffer
+                    const arrayBuffer = await lastAudioBlob.arrayBuffer();
+                    audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+                    drawWaveform(audioBuffer); // Draw the waveform
+                    setPlaybackButtonsState(true); // Enable playback/trim buttons
+                    updateStatus('Recording processed. Ready to play or trim.');
+
+                    // Optional: Play back immediately after recording
+                    // playAudio();
+
+                } catch (e) {
+                    console.error('Error processing audio after recording:', e);
+                    updateStatus(`Error processing audio: ${e.message}`, true);
+                    showMessageBox(`Error processing audio: ${e.message}`);
+                    setPlaybackButtonsState(false);
+                }
+            };
+
+            mediaRecorder.start();
+            updateStatus('Recording...');
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+            }
+        }
+
+        // --- Audio Playback ---
+
+        function playAudio() {
+            if (!audioBuffer) {
+                showMessageBox('No audio available to play.');
+                return;
+            }
+            stopPlayback(); // Ensure any previous playback is stopped
+
+            sourceNode = audioContext.createBufferSource();
+            sourceNode.buffer = audioBuffer;
+            sourceNode.connect(audioContext.destination);
+
+            sourceNode.onended = () => {
+                updateStatus('Playback finished.');
+                playbackOffset = 0; // Reset offset
+                playbackStartTime = 0;
+                drawWaveform(audioBuffer); // Redraw to clear playhead
+                setPlaybackButtonsState(true); // Re-enable buttons
+                pauseButton.disabled = true; // Pause button should be disabled
+            };
+
+            sourceNode.start(0, playbackOffset); // Start from current offset
+            playbackStartTime = audioContext.currentTime - playbackOffset; // Calculate actual start time
+            updateStatus('Playing audio...');
+            playButton.disabled = true;
+            pauseButton.disabled = false;
+            stopButton.disabled = false;
+
+            // Start drawing playhead
+            requestAnimationFrame(drawPlayhead);
+        }
+
+        function pauseAudio() {
+            if (sourceNode && audioContext.state === 'running') {
+                sourceNode.stop();
+                playbackOffset = audioContext.currentTime - playbackStartTime; // Store current playback position
+                updateStatus('Audio paused.');
+                playButton.disabled = false;
+                pauseButton.disabled = true;
+            }
+        }
+
+        function stopAudio() {
+            stopPlayback();
+            playbackOffset = 0; // Reset offset
+            playbackStartTime = 0;
+            drawWaveform(audioBuffer); // Redraw to clear playhead
+            updateStatus('Audio stopped.');
+            setPlaybackButtonsState(true); // Re-enable buttons
+            pauseButton.disabled = true; // Pause button should be disabled
+        }
+
+        function stopPlayback() {
+            if (sourceNode) {
+                sourceNode.onended = null; // Clear onended to prevent it from firing when manually stopped
+                sourceNode.stop();
+                sourceNode.disconnect();
+                sourceNode = null;
+            }
+        }
+
+        // --- Waveform Visualization ---
+
+        function clearWaveform() {
+            canvasCtx.clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
+        }
+
+        function drawWaveform(buffer) {
+            if (!buffer) {
+                clearWaveform();
+                return;
+            }
+
+            const width = waveformCanvas.width;
+            const height = waveformCanvas.height;
+            canvasCtx.clearRect(0, 0, width, height);
+
+            const data = buffer.getChannelData(0); // Get data from the first channel
+            const step = Math.ceil(data.length / width);
+            const amp = height / 2;
+
+            canvasCtx.beginPath();
+            canvasCtx.strokeStyle = '#6a11cb'; // Waveform color
+            canvasCtx.lineWidth = 1;
+
+            for (let i = 0; i < width; i++) {
+                let min = 1.0;
+                let max = -1.0;
+                for (let j = 0; j < step; j++) {
+                    const datum = data[(i * step) + j];
+                    if (datum < min) min = datum;
+                    if (datum > max) max = datum;
+                }
+                canvasCtx.lineTo(i, (1 + min) * amp);
+                canvasCtx.lineTo(i, (1 + max) * amp);
+            }
+            canvasCtx.stroke();
+
+            // Draw selection if active
+            drawSelection();
+        }
+
+        function drawPlayhead() {
+            if (!sourceNode || !audioBuffer || audioContext.state !== 'running') {
+                return;
+            }
+
+            const width = waveformCanvas.width;
+            const duration = audioBuffer.duration;
+            const currentTime = audioContext.currentTime - playbackStartTime;
+
+            if (currentTime >= duration) {
+                // Playback finished, onended will handle cleanup
+                return;
+            }
+
+            const x = (currentTime / duration) * width;
+
+            drawWaveform(audioBuffer); // Redraw waveform to clear previous playhead
+            canvasCtx.beginPath();
+            canvasCtx.strokeStyle = '#ef4444'; // Red for playhead
+            canvasCtx.lineWidth = 2;
+            canvasCtx.moveTo(x, 0);
+            canvasCtx.lineTo(x, waveformCanvas.height);
+            canvasCtx.stroke();
+
+            requestAnimationFrame(drawPlayhead);
+        }
+
+        function drawSelection() {
+            if (!audioBuffer || selectionStartX === selectionEndX) {
+                return;
+            }
+
+            const width = waveformCanvas.width;
+            const height = waveformCanvas.height;
+            const startX = Math.min(selectionStartX, selectionEndX);
+            const endX = Math.max(selectionStartX, selectionEndX);
+
+            canvasCtx.fillStyle = 'rgba(255, 0, 0, 0.3)'; // Red transparent overlay
+            canvasCtx.fillRect(startX, 0, endX - startX, height);
+        }
+
+        // --- Waveform Selection Logic ---
+
+        waveformCanvas.addEventListener('mousedown', (e) => {
+            if (!audioBuffer) return;
+            isSelecting = true;
+            stopPlayback(); // Stop playback when starting selection
+            selectionStartX = e.offsetX;
+            selectionEndX = e.offsetX; // Start and end at the same point initially
+            drawWaveform(audioBuffer); // Redraw to clear old selection
+        });
+
+        waveformCanvas.addEventListener('mousemove', (e) => {
+            if (!isSelecting || !audioBuffer) return;
+            selectionEndX = e.offsetX;
+            drawWaveform(audioBuffer); // Redraw with new selection
+        });
+
+        waveformCanvas.addEventListener('mouseup', () => {
+            if (!isSelecting || !audioBuffer) return;
+            isSelecting = false;
+
+            // Convert pixel coordinates to audio seconds
+            const width = waveformCanvas.width;
+            const duration = audioBuffer.duration;
+
+            const startPixel = Math.min(selectionStartX, selectionEndX);
+            const endPixel = Math.max(selectionStartX, selectionEndX);
+
+            selectionStartSeconds = (startPixel / width) * duration;
+            selectionEndSeconds = (endPixel / width) * duration;
+
+            if (selectionStartSeconds === selectionEndSeconds) {
+                updateStatus('No selection made. Click and drag to select.', true);
+            } else {
+                updateStatus(`Selected from ${selectionStartSeconds.toFixed(2)}s to ${selectionEndSeconds.toFixed(2)}s.`);
+            }
+            drawWaveform(audioBuffer); // Final redraw with selection
+        });
+
+        // --- Audio Trimming and WAV Encoding Functions ---
+
+        // Function to write WAV header
+        function writeString(view, offset, string) {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        }
+
+        function floatTo16BitPCM(output, offset, input) {
+            for (let i = 0; i < input.length; i++, offset += 2) {
+                let s = Math.max(-1, Math.min(1, input[i]));
+                output.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+            }
+        }
+
+        function encodeWAV(audioBuffer) {
+            const numChannels = audioBuffer.numberOfChannels;
+            const sampleRate = audioBuffer.sampleRate;
+            const format = 1; // PCM
+            const bitDepth = 16;
+            const bytesPerSample = bitDepth / 8;
+            const blockAlign = numChannels * bytesPerSample;
+            const byteRate = sampleRate * blockAlign;
+            const dataSize = audioBuffer.length * blockAlign;
+            const fileSize = 36 + dataSize;
+
+            const buffer = new ArrayBuffer(fileSize);
+            const view = new DataView(buffer);
+
+            // RIFF chunk descriptor
+            writeString(view, 0, 'RIFF'); // ChunkID
+            view.setUint32(4, fileSize, true); // ChunkSize
+            writeString(view, 8, 'WAVE'); // Format
+
+            // FMT sub-chunk
+            writeString(view, 12, 'fmt '); // Subchunk1ID
+            view.setUint32(16, 16, true); // Subchunk1Size (16 for PCM)
+            view.setUint16(20, format, true); // AudioFormat (1 for PCM)
+            view.setUint16(22, numChannels, true); // NumChannels
+            view.setUint32(24, sampleRate, true); // SampleRate
+            view.setUint32(28, byteRate, true); // ByteRate
+            view.setUint16(32, blockAlign, true); // BlockAlign
+            view.setUint16(34, bitDepth, true); // BitsPerSample
+
+            // Data sub-chunk
+            writeString(view, 36, 'data'); // Subchunk2ID
+            view.setUint32(40, dataSize, true); // Subchunk2Size
+
+            // Write audio data
+            let offset = 44;
+            for (let i = 0; i < numChannels; i++) {
+                floatTo16BitPCM(view, offset, audioBuffer.getChannelData(i));
+                offset += audioBuffer.getChannelData(i).length * bytesPerSample;
+            }
+
+            return new Blob([view], { type: 'audio/wav' });
+        }
+
+        // Event listener for Trim Selected & Download Audio button
+        trimDownloadButton.addEventListener('click', async () => {
+            if (!audioBuffer) {
+                showMessageBox('No audio recorded yet to trim and download.');
+                return;
+            }
+            if (selectionStartSeconds === selectionEndSeconds) {
+                showMessageBox('Please select a portion of the audio to delete by clicking and dragging on the waveform.');
+                return;
+            }
+
+            updateStatus('Trimming and encoding audio...');
+
+            try {
+                // Determine the parts to keep
+                const firstPartStart = 0;
+                const firstPartEnd = selectionStartSeconds;
+                const secondPartStart = selectionEndSeconds;
+                const secondPartEnd = audioBuffer.duration;
+
+                const newDuration = (firstPartEnd - firstPartStart) + (secondPartEnd - secondPartStart);
+
+                if (newDuration <= 0) {
+                    showMessageBox('After trimming, the audio would be empty. Please adjust your selection.');
+                    updateStatus('Trimmed audio too short.', true);
+                    return;
+                }
+
+                // Create a new AudioBuffer for the combined (trimmed) audio
+                const trimmedAudioBuffer = audioContext.createBuffer(
+                    audioBuffer.numberOfChannels,
+                    Math.ceil(newDuration * audioBuffer.sampleRate), // Calculate total samples
+                    audioBuffer.sampleRate
+                );
+
+                let currentOffsetSamples = 0; // Track position in the new buffer
+
+                // Copy the first part
+                if (firstPartEnd > firstPartStart) {
+                    const startSample = Math.floor(firstPartStart * audioBuffer.sampleRate);
+                    const endSample = Math.floor(firstPartEnd * audioBuffer.sampleRate);
+                    const length = endSample - startSample;
+
+                    for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
+                        const originalChannelData = audioBuffer.getChannelData(channel);
+                        const trimmedChannelData = trimmedAudioBuffer.getChannelData(channel);
+                        for (let i = 0; i < length; i++) {
+                            trimmedChannelData[currentOffsetSamples + i] = originalChannelData[startSample + i];
+                        }
+                    }
+                    currentOffsetSamples += length;
+                }
+
+                // Copy the second part
+                if (secondPartEnd > secondPartStart) {
+                    const startSample = Math.floor(secondPartStart * audioBuffer.sampleRate);
+                    const endSample = Math.floor(secondPartEnd * audioBuffer.sampleRate);
+                    const length = endSample - startSample;
+
+                    for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
+                        const originalChannelData = audioBuffer.getChannelData(channel);
+                        const trimmedChannelData = trimmedAudioBuffer.getChannelData(channel);
+                        for (let i = 0; i < length; i++) {
+                            trimmedChannelData[currentOffsetSamples + i] = originalChannelData[startSample + i];
+                        }
+                    }
+                    currentOffsetSamples += length;
+                }
+
+                // Update the main audioBuffer to the trimmed version for subsequent operations
+                audioBuffer = trimmedAudioBuffer;
+                selectionStartX = selectionEndX = 0; // Clear selection
+                selectionStartSeconds = selectionEndSeconds = 0;
+                drawWaveform(audioBuffer); // Redraw the new, trimmed waveform
+
+                // Encode the trimmed AudioBuffer to WAV
+                const wavBlob = encodeWAV(trimmedAudioBuffer);
+
+                // Trigger download
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = URL.createObjectURL(wavBlob);
+                a.download = 'walkie_talkie_trimmed_' + new Date().getTime() + '.wav';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(a.href); // Clean up the URL
+                updateStatus('Trimmed audio downloaded as .wav!');
+
+            } catch (error) {
+                console.error('Error trimming or downloading audio:', error);
+                showMessageBox(`Failed to trim and download audio: ${error.message}`);
+                updateStatus('Audio trimming failed.', true);
+            }
+        });
+
+        // --- Event Listeners ---
+
+        pttButton.addEventListener('mousedown', () => {
+            if (stream) {
+                startRecording();
+            } else {
+                updateStatus('Microphone not ready. Please wait or refresh if permission was just granted.', true);
+            }
+        });
+
+        pttButton.addEventListener('mouseup', () => {
+            stopRecording();
+        });
+
+        // For mobile touch events
+        pttButton.addEventListener('touchstart', (e) => {
+            e.preventDefault(); // Prevent scrolling/zooming
+            if (stream) {
+                startRecording();
+            } else {
+                updateStatus('Microphone not ready. Please wait or refresh if permission was just granted.', true);
+            }
+        });
+
+        pttButton.addEventListener('touchend', (e) => {
+            e.preventDefault(); // Prevent default touch behavior
+            stopRecording();
+        });
+
+        playButton.addEventListener('click', playAudio);
+        pauseButton.addEventListener('click', pauseAudio);
+        stopButton.addEventListener('click', stopAudio);
+
+        // Add keydown listener for Enter key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !trimDownloadButton.disabled) {
+                trimDownloadButton.click(); // Programmatically click the button
+            }
+        });
+
+        // Initialize microphone access when the window loads
+        window.onload = async function() {
+            await getMicrophoneAccess();
+            setPlaybackButtonsState(false); // Ensure playback/trim buttons are disabled on load
+            clearWaveform(); // Clear canvas initially
+        };
+
+        // Handle canvas resize (optional, but good practice for responsiveness)
+        window.addEventListener('resize', () => {
+            // Re-draw waveform if it exists
+            if (audioBuffer) {
+                drawWaveform(audioBuffer);
+            }
+        });
+    </script>
+</body>
+</html>
